@@ -1,0 +1,210 @@
+---
+title: "FA1_Lecture 3-Cuerdo, Naomi Hannah A."
+author: "Cuerdo, Naomi Hannah A."
+date: "2025-02-01"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, include=FALSE}
+library(tidyverse)
+library(dplyr)
+diamonds
+```
+
+# Lecture 3
+
+## 2 Isolating Data
+### 2.1 filter()
+
+```{r filter1}
+filter(diamonds, price >= 10000)
+```
+
+filtering diamonds with price at least $10,000 and clarity VVS1 or IF:
+```{r filter2}
+filter(diamonds, price >10000 & clarity %in% c("VVS1", "IF"))
+
+```
+### 2.2 select()
+```{r select}
+select(diamonds, carat, cut, color, clarity)
+
+```
+
+### 2.3 arrange()
+sorting diamonds by carat in ascending order:
+
+```{r arrange ascending}
+
+arrange(diamonds,carat)
+
+```
+
+arranging diamonds by carat in descending order:
+```{r arrange descending}
+arrange(diamonds, desc(carat))
+
+```
+
+Arranging diamonds in decreasing order of their length:
+```{r arrange length}
+arrange(diamonds, desc(x))
+```
+From the table above, the longest diamond is 5.01 fair cut carat, with a length of 10.74.
+
+## 3 Deriving information
+### 3.1 mutate()
+
+adding a column that is the price per carat of each diamonds:
+
+```{r mutate}
+mutate(diamonds, price_per_carat = price/carat)
+
+```
+
+adding a column that indicates whether a diamonds price per carat is at least $10,000:
+```{r carat }
+mutate(diamonds, fancy_diamond = price/carat > 10000)
+
+```
+
+Checking the quality of the diamond based on its size:
+```{r}
+mutate(diamonds, 
+       value =
+         case_when(
+           carat > 2 & price < 5000 ~ "good", # if carat > 2 and price < 5000, then good
+           carat > 1 & price < 2500 ~ "ok", # if carat > 1 and price < 2500, then ok
+           TRUE ~ "bad" # otherwise, bad
+           )
+       )
+```
+
+### 3.2 summarise()
+finding the number of "fancy" diamonds where its price per carat is at least $10000 and its average price:
+
+```{r}
+summarise(diamonds, num_fancy_diamonds = sum(price/carat > 10000), mean_diamond_price = mean(price))
+
+```
+The number of fancy diamonds that exceeds over $10,000$ is around 617, and the average price of a diamond is at $3932.8$
+
+Determining if there are any diamonds of at least one carat that cost less than $1000:
+
+```{r}
+summarise(diamonds, num_cheap_diamonds = sum(carat >= 1 & price < 1000), mean_diamond_price = mean(price))
+```
+From the table, it seems that there are no diamonds that are less than $1000.
+
+## 4 Multi-step transformations
+### 4.1 The pipe (%>%)
+
+```{r pipe}
+diamonds %>% # pipe in the data
+filter(cut == "Premium") %>% # restrict to premium cut diamonds
+mutate(price_per_carat = price/carat) %>% # add price_per_carat variable
+arrange(desc(price_per_carat)) # sort based on price_per_carat
+
+```
+
+Plotting a histogram to further visualize the data:
+```{r}
+diamonds %>% # pipe in the data
+filter(cut == "Premium") %>% # restrict to premium cut diamonds
+mutate(price_per_carat = price/carat) %>% # add price_per_carat variable
+ggplot() + # start a ggplot
+geom_histogram(aes(x = price_per_carat))
+```
+
+Calculating the mean price for diamonds of volume at least one carat:
+```{r}
+diamonds %>%
+  filter(carat >= 1) %>%
+  summarise(mean_price_one_carat = mean(price))
+```
+The average price of one carat is at $8142.115.
+
+### 4.2 group_by()
+
+Finding the maximum price of diamonds for each cut:
+
+```{r}
+diamonds %>% 
+group_by(cut) %>% 
+summarise(max_price = max(price))
+
+```
+
+Finding the maximum price for each group by cut and clarity:
+
+```{r}
+diamonds %>% # pipe in the data
+group_by(cut, clarity) %>% # group by both cut and clarity
+summarise(max_price = max(price))
+```
+
+Ungrouping the data, we get:
+
+```{r}
+diamonds %>% # pipe in the data
+group_by(cut, clarity) %>% # group by both cut and clarity
+summarise(max_price = max(price)) %>% # find the max price for each group
+ungroup()
+
+```
+
+```{r}
+count(diamonds, cut)
+```
+
+Reproducing the output of count(diamonds, cut) via group_by and summarise()
+```{r}
+diamonds %>%
+  group_by(cut) %>%
+  summarise(count = n())
+
+```
+Majority of the diamonds are categorized as **Ideal** and **Premium**, and the least number of diamonds are in the **Poor** category.
+
+## Exercises
+
+**What is the minimum diamond price in the dataset? See if you can find the answer in two different ways.**
+
+Using summarise() and min() functions:
+
+```{r}
+diamonds %>%
+  summarise(min_price = min(price))
+
+```
+
+Using arrange() and head():
+```{r}
+diamonds %>%
+  arrange(price) %>%
+  head(1)
+```
+
+The minimum diamond price in the dataset is $326.
+
+**How many diamonds have length at least one and a half times their width?**
+
+```{r}
+diamonds %>%
+  filter(x >= 1.5 * y) %>%
+  summarise(count = n())
+```
+There are 10 diamonds that have a length at least one and a half times their width. 
+
+**Among diamonds with colors D, E, F, G, what is the median number of carats for diamonds of each cut?**
+```{r}
+diamonds %>%
+  filter(color %in% c("D", "E", "F", "G")) %>%
+  group_by(cut) %>%
+  summarise(median_carat = median(carat))
+```
+The table above shows the median number of carats for diamonds of each cut with colors D, E, F, and G. **Fair cut** has a median of **0.91**, **Good cut** has 0.72, **Very Good** has **0.70**, **Premium** has **0.71**, and **Ideal** has **0.52**. It appears that fair has the high number of median, while ideal has the lowest.  

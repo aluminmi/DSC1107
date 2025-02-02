@@ -1,0 +1,289 @@
+---
+title: "FA1_Lecture 4 - Cuerdo, Naomi Hannah A."
+author: "Cuerdo, Naomi Hannah A."
+date: "2025-02-01"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+
+
+```
+
+# Lecture 4
+
+## 2 Data Import
+
+```{r data import}
+heights = read.csv("C:/Users/naomi/Downloads/heights.csv")
+
+head(heights)
+
+```
+
+## Tidy Data
+
+**Generating the tables from the lecture:**
+
+```{r table1}
+table1
+```
+In **table1**, each row represents a single **observation**, defined as a unique combination of a country and a year. The dataset follows the principles of **tidy data**, where:
+
+  The **country** column identifies the name of the country.
+  The **year** column specifies the year of observation.
+  The **cases** column records the number of reported cases in   that country and year.
+  The **population** column provides the total population for
+  that country and year.
+  
+Each row contains a complete set of values for all variables, making it easy to analyze and manipulate.
+
+```{r table2}
+table2
+
+```
+In **table2**, each row still represents a **country and a year**, but the dataset is structured differently:  Instead of having separate columns for cases and population, these variables are combined into two columns:
+
+  The **type** column indicates whether the row contains a
+  value for cases or population.
+  The **count** column stores the numerical value corresponding   to the type column.
+
+```{r table 3}
+table3
+
+```
+**Table 3** still represents a **country and a year**, but instead of having separate column for cases and population, these two variables are **combined into a single column** called **rate**. 
+
+  The **rate** column stores values in the form of a fraction
+  (e.g., 745/37765203), where the numerator represents cases,
+  and the denominator represents population.
+  
+However, this table is not tidy, because a single column contains two variables, making it difficult to separate and analyze the data efficiently. 
+
+```{r table4a}
+table4a
+
+```
+
+In **table4a,** each row represents a country, but the year variable is not explicitly stored as a column. 
+
+  The **years** (e.g., 1999, 2000) appear as separate column     names.
+  The **values** in these columns represent cases reported in    each respective year.
+  
+This structure is considered wide format,wherein observations are spread across multiple columns rather than organized as distinct variables in separate rows. While this format is useful for presentation, it is **not tidy** because the year variable is placed as column names instead of having its own column.
+
+```{r table4b}
+table4b
+
+```
+
+**Table 4b** represents a country, with population recorded for multiple years. Each year is a separate column, with **population** as values. 
+
+This is **not considered as a tidy format**, as the **year** variable should ideally be in its own column rather than spread across multiple column names.
+
+## 4 Pivoting
+### 4.1 Longer
+
+Pivoting Table 4a to a new pair of values:
+```{r tidying 4a}
+table4a %>%
+pivot_longer(cols = c(`1999`, `2000`), names_to = "year", values_to = "cases")
+
+```
+Tidying table4b in a similar fashion:
+
+```{r tidy table4b}
+
+table4b %>%
+pivot_longer(cols = c(`1999`, `2000`), names_to = "year", values_to = "population")
+
+```
+
+**Difference between the code for Table4a and Table4b**
+
+- In **table4a**, the values in the selected columns represent the **number of cases**
+- In **table4b**, the values  represent the **population** for each year. 
+
+Hence, the code to execute this is similar, but we tweak **values_to** since each table represents different variables. 
+This transformation ensures that **each variable has its own column**, making it easier to analyze and visualize trends over time. 
+
+### 4.2 Wider
+Tidying **table2** for an accurate table:
+
+```{r wide table 2}
+table2 %>%
+  pivot_wider(names_from = type, values_from = count)
+
+```
+
+
+Tidying the simple tibble from the lecture:
+
+```{r}
+tribble(
+  ~pregnant, ~male, ~female,
+  "yes", NA, 10,
+  "no", 20, 12
+) %>%
+  pivot_longer(cols = c(male, female), names_to = "gender", values_to = "count")
+
+```
+
+The given table is in an **untidy** format because the **gender information** is stored in column names (male, female), instead of as values in a single column. To tidy this, we need to use **pivot_longer()** to reshape it into long format.
+
+After tidying the data, each row now represents a single observation (pregnancy status for one gender). Each column also represents only one variable (pregnant, gender, and count).
+
+This format makes it easier to analyze gender differences in pregnancy status.
+
+## 5 Joining
+Calling the tidy versions of table4a and table4b:
+
+```{r joining}
+tidy4a <- table4a %>%
+pivot_longer(c(`1999`, `2000`), names_to = "year", values_to = "cases")
+tidy4b <- table4b %>%
+pivot_longer(c(`1999`, `2000`), names_to = "year", values_to = "population")
+
+```
+
+```{r tidy4a}
+tidy4a
+```
+```{r}
+tidy4b
+```
+
+Since both tables have the same country, we can join these tables using left_join() function:
+```{r left_join}
+left_join(x = tidy4a, y = tidy4b, by = c("country", "year"))
+
+```
+
+**Exercise.** Consider the two tibbles below. What is the key column? Without writing any code, can you predict how many rows and columns left_join(x,y) and left_join(y,x) will have?
+
+```{r tibble}
+x <- tribble(
+  ~state, ~population,
+  "PA", 12.8,
+  "TX", 28.6,
+  "NY", 19.5
+  )
+y <- tribble(
+  ~state, ~capital,
+  "TX", "Austin",
+  "CA", "Sacramento",
+  "NY", "New York City",
+  "MI", "Lansing"
+  )
+
+```
+
+**Predicting left_join(x, y)**
+From the table:
+- x has **3 rows** (PA, TX, NY).
+- y has 4 rows (TX, CA, NY, MI).
+
+After the join:
+- TX and NY exist in both tables, so their capital values from   y will be added to x.
+- PA exists in x but not in y, so it will get NA in the
+  capital column.
+- CA and MI exist in y but not in x, so they will be ignore 
+  in left_join(x, y).
+- The table will have 3 rows and 3 columns. 
+  
+**Predicting left_join(y, x)**
+The code keeps all rows from y and merges matching rows from x.
+
+After the join:
+- TX and NY exist in both tables, so their population values
+  from x will be added to y.
+- CA and MI exist in y but not in x, so they will get NA in
+  the population column.
+- PA exists in x but not in y, so it will be ignored in
+  left_join(y, x).
+- The table will have 4 columns and 3 columns
+
+## 6 Separating
+From table3, the rate column contains both cases and population variables, and it needs to be splitted into two variables.
+
+Using the separate() function, we get:
+```{r separate}
+table3 %>%
+  separate(rate, into = c("cases", "population"))
+
+```
+
+Rewriting the code to get a similar result:
+```{r rewrite}
+table3 %>%
+  separate(rate, into = c("cases", "population"), sep = "/")
+```
+
+From the table, we can see that **cases** and **population** are character columns. We might need to convert to better types using convert() = TRUE:
+```{r convert}
+tibble3 <- table3 %>%
+  separate(rate, into = c("cases", "population"), convert =
+             TRUE)
+
+tibble3
+
+```
+
+```{r visualization}
+data <- tibble3
+
+ggplot(data, aes(x = year, y = cases, group = country, color = country)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(title = "Reported Cases Over Time (1999–2000)",
+       x = "Year",
+       y = "Number of Cases",
+       color = "Country") +
+  theme_minimal()
+
+```
+
+This data set contains reported cases and population data for Afghanistan, Brazil, and China across 1999 and 2000 was analyzed. Population growth was observed in all three countries. China had the largest population, followed by Brazil and Afghanistan.
+
+When examining cases per population, Afghanistan exhibited the largest relative increase (0.0037% to 0.0129%), suggesting a notable rise in reported infections. Brazil also showed a significant increase (0.022% to 0.046%). In contrast, China's incidence rate remained nearly unchanged (~0.0167%). These trends highlight variations in case growth relative to population size across different regions.
+
+## 7 Missing Values
+
+```{r dataset}
+stocks <- tibble(
+  year = c(2015, 2015, 2015, 2015, 2016, 2016, 2016),
+  qtr = c( 1, 2, 3, 4, 2, 3, 4),
+  return = c(1.88, 0.59, 0.35, NA, 0.92, 0.17, 2.66)
+)
+
+stocks
+
+
+```
+
+From the table, we can see that there is a missing value in the fourth row. We might need to clean the data. 
+
+Pivoting the data set wider:
+```{r pivot}
+stocks %>%
+  pivot_wider(names_from = year, values_from = return)
+```
+
+omitting the missing values:
+
+```{r omit}
+tribble4 <- stocks %>%
+  na.omit()
+
+tribble4
+
+```
+
+
+
