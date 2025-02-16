@@ -1,0 +1,232 @@
+---
+title: "FA2_ Cuerdo, Naomi Hannah A."
+author: "Cuerdo, Naomi Hannah A."
+date: "2025-02-05"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r import libraries, include=FALSE}
+library(tidyverse)
+library(stringr)
+
+```
+
+
+## Import the Required Datasets
+```{r files}
+data("who")
+data("population")
+```
+
+### Previewing the contents of who.tsv and population.csv
+```{r preview the contents of who.tsv}
+
+glimpse(who)
+
+```
+```{r preview the contents of population.csv}
+
+glimpse(population)
+
+
+```
+
+### Determining the number of rows and columns in each tibble 
+```{r number of rows and columns of each data set}
+dim(who)
+dim(population)
+
+```
+
+The WHO dataset has 7240 rows and 60 columns, while the population dataset has 4060 rows and 3 columns. 
+
+
+### Fixing any anomalies from the dataset
+
+```{r summary and fix anomalies}
+summary(population)
+population2 <- population %>% mutate(across(where(is.character), ~ suppressWarnings(as.numeric(.)), .names = "cleaned_{col}"))
+
+```
+
+
+## Tidy Data
+
+### WHO Dataset
+```{r tidy who dataset}
+who2 <-who %>%
+  pivot_longer(cols = starts_with("new"), 
+               names_to = "category",
+              values_to = "cases",
+              values_drop_na = TRUE)
+
+who3 <- who2 %>% separate(category, into = c("new", "type", "sex_age"), sep = "_", fill = "right", extra = "merge") %>% select(-new)
+
+who_tidy <- who3 %>% mutate(sex = substr(sex_age, 1, 1), age_group = substr(sex_age, 2, nchar(sex_age))) %>% select(-sex_age)
+```
+
+
+### Population Dataset
+
+```{r identifying variables}
+colnames(population)
+```
+
+
+Since the variables in the dataset is already tidy, there is no need to perform a pivot operation. we then proceed to cast the population variable into an appropriate data type.
+
+```{r tidy population dataset}
+population_tidy <- population %>% mutate(year = as.integer(year))
+```
+
+
+### Join Datasets
+
+```{r joining datasets}
+tuberculosis <- left_join(who_tidy, population_tidy, by = c("country", "year"))
+```
+
+
+### Removing the unnecessary variables from the Tuberculosis Dataset
+
+```{r cleaning data}
+tuberculosis <- tuberculosis %>% drop_na()
+tuberculosis
+
+```
+
+
+## Data Manipulation
+
+### Determining the Total TB Cases Among Men and Women in the 21st Century in the United States:
+
+```{r TB cases in the US in the 21st centruy}
+
+us_tb <- tuberculosis %>% filter(country == "United States of America", year >= 2000) %>% group_by(sex) %>% summarise(total_cases = sum(cases, na.rm = TRUE))
+us_tb
+
+```
+
+The table above shows the total cases of tuberculosis among men and women in the 21st century in the United States. 
+
+From the table, It is shown that the total cases of TB for **females** is at **42,184**, while the total cases of TB for **males** is at **72,345**. From here, we can conclude that males have higher cases in the 21st century than women. 
+
+### Determining the country and year with the highest cases per 100,000 people by year, sex, age group, and TB type.
+
+
+```{r Cases per 100k}
+
+tuberculosis <- tuberculosis %>% mutate(cases_per_100k = (cases / population) * 100000)
+  
+```
+
+```{r Identifying the Max & Min Cases per 100k}
+top_case <- tuberculosis %>% filter(cases_per_100k == max(cases_per_100k, na.rm = TRUE))
+
+low_case <- tuberculosis %>% filter(cases_per_100k == min(cases_per_100k, na.rm = TRUE))
+```
+
+### Reviewing the Top Case of Tuberculosis
+```{r top case}
+
+top_case
+
+```
+
+The table above shows the highest cases of TB in the 21st century in 100,000 per people. From the table, it is shown that **Samoa** has the highest TB cases in **2009**, with a total number of **601.5029.**
+
+### Reviewing the Lowest Case of Tub
+```{r low_case}
+low_case
+```
+
+The table above shows the lowest cases of TB in the 21st century in 100,000 per people. It seems that there are a lot of countries that has zero cases of tuberculosis in the 21st century, so it is best to check the first 10 rows:
+
+```{r low cases}
+
+low_cases <- tuberculosis %>% arrange(cases_per_100k) %>% head(10)
+
+low_cases
+
+```
+
+From the table, it is shown that **Afghanistan** has zero  cases of TB during 1997 and 2007.
+
+## Data Visualization
+
+### Plotting the total cases per 100k as a function of year for China, India, and the United States:
+
+
+```{r data visualization for CN, IN, & US}
+
+tuberculosis %>% filter(country %in% c("China", "India", "United States of America")) %>%
+  ggplot(aes(x = year, y = cases_per_100k, color = country)) +
+  geom_line() +
+  scale_y_log10() +
+  labs(title = "TB Cases per 100k Over Time", y = "Cases per 100k (log scale)")
+```
+
+The graph above shows the trends in TB cases per 100,000 people over time for China, India, and the United States. From the graph, **China** shows a **steady decline**, suggesting their efforts for controlling TB is effective over time, while **India** shows **fluctuations with occasional spikes**, indicating inconsistent outbreaks of the disease. The U.S., on the other hand, maintains the lowest TB rates with periodic fluctuations. Overall, India has the highest TB cases, followed by China, and the U.S having the lowest case.
+
+### Comparing distributions of total cases per 100,000 people summed over years, sexes, and TB types across age groups:
+
+```{r data vis across age groups}
+
+tuberculosis %>% 
+  group_by(age_group) %>%
+  summarise(total_cases_per_100k = sum(cases_per_100k, na.rm = TRUE)) %>%
+  mutate(age_group = case_when(
+    age_group == "014" ~ "0-14",
+    TRUE ~ str_replace(age_group, "(\\d{2})(\\d{2})", "\\1-\\2")
+  )) %>%
+  ggplot(aes(x = age_group, y = total_cases_per_100k, fill = age_group)) +
+  geom_col() +
+  scale_y_log10() +
+  labs(title = "TB Cases per 100k by Age Group") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+```
+
+
+The graph shows visualizes the total cases of TB in 100,000 people over the 21st century. From the graph, it is shown that adults in **ages 25-34 has the highest number of cases**, which **exceeds over 10,000 cases, followed by ages 15-24 and 35-44**. This indicates that TB cases are common among young and middle-aged adults. Meanwhile, **cases in older age groups  decline, specifically in ages 55 and above**. **Ages 0-14 have lower TB cases**, suggesting that diagnosis is uncommon among children. 
+
+Furthermore, The y-axis seems to be logarithmic, which means that the difference between age groups may be more significant that it is being visualized. 
+
+
+
+```{r Relationship Between Cases and Population}
+
+tuberculosis %>% 
+  filter(year == 2000, cases_per_100k > 0, population > 0) %>%
+  ggplot(aes(x = population, y = cases_per_100k)) +
+  geom_point(alpha = 0.5, color = "purple") +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(
+    title = "Cases per 100k vs. Population in 2000",
+    x = "Population (log scale)",
+    y = "Cases per 100k (log scale)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+
+
+```
+
+The graph above shows the relationship between population size and tuberculosis cases per 100,00 people in the year 2000, using a logarithmic scale for both axes. From the graph, there is an evident downward trend, wherein smaller populations tend to have higher TB incidence rates per 100k, while larger populations generally report lower rates. This potentially indicates that TB disproportionately affects smaller or less developed regions with limited healthcare access, or populations with smaller sizes tend to spread the disease much easier since TB can be carried through air can circulate more rapidly in close knit close-knit communities.
+
+Furthermore, the clustering of points at higher TB rates for smaller population may also reflect reporting biases or localized outbreaks, while the more dispersed points for larger populations suggest variability in TB prevalence across different countries. 
+
+
+
+
