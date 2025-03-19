@@ -1,0 +1,412 @@
+---
+title: "Summative Assessment 1"
+author: "Cuerdo, Naomi Hannah A."
+date: "2025-03-15"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(ROSE)
+library(randomForest)
+library(pscl)
+library(glmnet)
+```
+
+#### Loading the dataset
+
+```{r dataset}
+df <- read.csv("C:/Users/naomi/Downloads/customer_churn.csv")
+
+```
+
+
+## 1 R for Data Mining
+
+**1. Intro to Modern Data Mining**
+
+```{r overview}
+dim(df)
+str(df) 
+summary(df)
+sum(is.na(df))
+colnames(df)
+```
+
+**Dataset Overview:**
+- Dimensions: 10,000 rows x 12 columns
+- Missing Values: None
+- Variable Types:
+  Categorical: Gender, Partner, Dependents, PhoneService, InternetService, Contract, Churn
+  Numerical: Tenure, MonthlyCharges, TotalCharges, SeniorCitizen
+  (binary: 0 or 1)
+  Identifier: CustomerID
+
+**Why Data Mining?**
+
+We need to use data mining for this dataset because it identifies patterns in customer churn, helps optimize customer retention strategies, and it helps detect key factors influencing customer behavior
+
+## 2 Data Visualization
+2.1 Churn Rate by Tenure
+```{r}
+ggplot(df, aes(x = Tenure, fill = Churn)) +
+  geom_histogram(binwidth = 5, position = "dodge") +
+  labs(title = "Churn Rate by Tenure", x = "Tenure (Months)", y = "Count") +
+  theme_minimal()
+
+
+```
+
+2.2 Churn rate by Internet Service Type
+
+```{r}
+ggplot(df, aes(x = InternetService, fill = Churn)) +
+  geom_bar(position = "fill") +
+  labs(title = "Churn Rate by Internet Service Type", x = "Internet Service", y = "Proportion") +
+  theme_minimal()
+```
+
+2.3 Monthly Charges vs Churn
+```{r monthly charges}
+
+ggplot(df, aes(x = MonthlyCharges, fill = Churn)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Distribution of Monthly Charges by Churn Status", x = "Monthly Charges", y = "Density") +
+  theme_minimal()
+
+```
+
+## 3 Data Transformation
+
+```{r data transformation}
+df <- df %>%
+  mutate(
+    Gender = as.factor(Gender),
+    SeniorCitizen = as.factor(SeniorCitizen),
+    Partner = as.factor(Partner),
+    Dependents = as.factor(Dependents),
+    PhoneService = as.factor(PhoneService),
+    InternetService = as.factor(InternetService),
+    Contract = as.factor(Contract),
+    Churn = as.factor(Churn) 
+  )
+
+df <- df %>%
+  mutate(across(c(Gender, SeniorCitizen, Partner, Dependents, 
+                  PhoneService, InternetService, Contract, Churn), as.factor))
+
+df$MonthlyCharges <- as.numeric(df$MonthlyCharges)
+df$TotalCharges <- as.numeric(df$TotalCharges)
+
+```
+
+## 4 Data Wrangling
+```{r data wrangling}
+Q1 <- quantile(df$TotalCharges, 0.25, na.rm = TRUE)
+Q3 <- quantile(df$TotalCharges, 0.75, na.rm = TRUE)
+IQR <- Q3 - Q1
+
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+
+df <- df %>%
+  filter(TotalCharges >= as.numeric(lower_bound) & TotalCharges <= as.numeric(upper_bound))
+
+```
+
+## 5 Review
+From the Exploratory Data Analysis, we can conclude that:
+1. Short- tenure customers churn more.
+2. Certain service types have higher churn rates.
+3. Monthly charges may influence churn
+4. Data Transformation improved model readiness. 
+
+# 2 Tuning Predictive Models
+
+## 6 Model Complexity
+
+```{r model complexity}
+df$Churn <- factor(df$Churn, levels = c("No", "Yes"))
+
+set.seed(42)
+train_index <- createDataPartition(df$Churn, p = 0.8, list = FALSE)
+train_data <- df[train_index, ]
+test_data <- df[-train_index, ]
+
+train_data$Churn <- factor(train_data$Churn, levels = c("No", "Yes"))
+test_data$Churn <- factor(test_data$Churn, levels = c("No", "Yes"))
+
+train_data$TotalCharges[is.na(train_data$TotalCharges)] <- median(train_data$TotalCharges, na.rm = TRUE)
+
+```
+
+```{r model complexity 2}
+
+log_model_churn <- glm(Churn ~ Tenure + MonthlyCharges + TotalCharges + Gender + Partner + Dependents + PhoneService + InternetService + Contract, data = train_data, family = binomial)
+
+summary(log_model_churn)
+
+```
+```{r decision tree}
+train_data$TotalCharges[is.na(train_data$TotalCharges)] <- median(train_data$TotalCharges, na.rm = TRUE)
+
+decision_tree_churn <- rpart(Churn ~ Tenure + MonthlyCharges + TotalCharges + Gender + Partner + Dependents + PhoneService + InternetService + Contract, data = train_data, method = "class", control = rpart.control(cp = 0, maxdepth = 5))
+
+summary(decision_tree_churn)
+```
+
+
+```{r decision tree 2}
+rpart.plot(decision_tree_churn, type = 3, extra = 101, tweak = 1.2, box.palette = "auto")
+
+```
+
+The tree structure suggests that **contract type and monthly charges** are the strongest predictors of churn. Other variables like **InternetService** and **TotalCharges** also play a role.
+
+On the other hand, the logistic regression suggests that contract type is the most important factor in predicting churn, while other variables are less impactful.
+
+
+Comparing their complexities, **Decision Trees** are more flexible but may overfit with deeper structures. **Logistic Regression** is more stable but may miss complex patterns.
+
+
+## 7 Bias-Variance Trade-Off
+
+**Bias** refers to error due to overly simple assumptions, leading to underfitting. On the other hand,, **Variance** refers to sensitvity to small fluctuations, leading to overfitting. 
+
+In this context, the **Logistic Regression** has **high bias, low variance**, which may underfit but it generalizes the model well. **Decision Trees** have **lower bias, higher variance**, in which they capture complex patterns but risk overfitting.
+
+The key to this is to balance both by tuning hyperparameters, such as limiting the tree depth, and using cross-validation. 
+
+## 8 Cross-Validation 
+
+```{r}
+control <- trainControl(method = "cv", number = 10)
+
+logit_cv <- train(Churn ~ Tenure + MonthlyCharges + TotalCharges + InternetService + Contract, data = train_data,
+                  method = "glm",
+                  family = binomial, 
+                  trControl = control)
+
+print(logit_cv)
+```
+Decision Tree with 10-Fold Cross-Validation:
+```{r dt with 10 fold cv}
+test_data$Churn <- factor(test_data$Churn, levels = c("No", "Yes"))
+
+dt_cv <- train(Churn ~ Tenure + MonthlyCharges + TotalCharges + InternetService + Contract, data = train_data,
+                  method = "rpart",
+                  trControl = control,
+               tuneGrid = expand.grid(cp = c(0.01, 0.005, 0.001, 0.0005)))
+
+print(dt_cv)
+```
+
+```{r compute predictions on test data}
+
+log_model <- log_model_churn
+logit_prob <- predict(log_model, test_data, type = "response")
+logit_pred <- ifelse(logit_prob > 0.4, "Yes", "No")  # Changed from 0.5
+logit_pred <- factor(logit_pred, levels = c("No", "Yes"))
+
+dt_prob <- predict(dt_cv, test_data, type = "prob")[,2] 
+dt_pred <- ifelse(dt_prob > 0.5, "Yes", "No")  # Change from 0.3 to 0.5
+dt_pred <- factor(dt_pred, levels = c("No", "Yes"))
+
+```
+
+
+```{r compute confusion matrices 2}
+logit_cm <- confusionMatrix(logit_pred, test_data$Churn, positive = "Yes")
+dt_cm <- confusionMatrix(dt_pred, test_data$Churn, positive = "Yes")
+
+print(logit_cm)
+print(dt_cm)
+```
+
+Extracting Accuracy, Precision, Recall, and F1-Score
+
+```{r extracting}
+
+extract_metrics <- function(cm) {
+  accuracy <- cm$overall["Accuracy"]
+  precision <- cm$byClass["Precision"]
+  recall <- cm$byClass["Recall"]
+  f1_score <- 2 * (precision * recall) / (precision + recall)
+  
+  return(data.frame(Accuracy = accuracy, Precision = precision, Recall = recall, F1_Score = f1_score))
+}
+
+
+logit_metrics <- extract_metrics(logit_cm)
+dt_metrics <- extract_metrics(dt_cm)
+
+print(logit_metrics)
+print(dt_metrics)
+```
+
+
+## 9 Classification
+
+```{r random forest}
+
+set.seed(42)
+rf_model <- randomForest(Churn ~ ., data = train_data, ntree = 100, mtry = 3, importance = TRUE)
+
+print(rf_model)
+
+```
+
+```{r}
+rf_pred <- predict(rf_model, test_data)
+
+```
+
+Evaluating Model Performance:
+```{r}
+rf_cm <- confusionMatrix(rf_pred, test_data$Churn, positive = "Yes")
+print(rf_cm)
+```
+Importance Plot:
+
+```{r}
+varImpPlot(rf_model)
+
+```
+
+# 3 Regression-Based Methods
+
+## Logistic Regression
+
+```{r logistic regression}
+
+log_model <- glm(Churn ~ Tenure + MonthlyCharges + TotalCharges + InternetService + Contract + Partner, 
+                 data = train_data, family = binomial)
+summary(log_model)
+
+```
+Tenure: p = 0.203 (Not significant)
+
+MonthlyCharges: p = 0.706 (Not significant)
+
+TotalCharges: p = 0.391 (Not significant)
+
+Intercept (p < 2e-16) is significant, but that's not useful.
+
+
+Assessing Model Significance:
+```{r}
+pR2(log_model) 
+
+```
+The McFadden R² (0.000115) is too low, meaning the model is ineffective. This means that the independent variables (Tenure, MonthlyCharges, and TotalCharges) may not be strong predictors of churn.
+
+## Regression in High Dimensions
+
+High-dimensional regression occurs when the number of predictos (p) is large relative to the number of observations. This can lead to **overfitting, computational inefficiency, and interpretability issues**.
+
+
+
+```{r PCA }
+
+numeric_features <- df %>% select(Tenure, MonthlyCharges, TotalCharges)
+
+numeric_features_scaled <- scale(numeric_features)
+
+summary(numeric_features_scaled)
+
+```
+Performing PCA:
+```{r PCA model}
+
+pca_model <- prcomp(numeric_features_scaled, center = TRUE, scale. = TRUE)
+
+pca_model
+
+```
+
+Checking Variance:
+```{r variance}
+explained_variance <- pca_model$sdev^2 / sum(pca_model$sdev^2)
+plot(cumsum(explained_variance), type = "b", pch = 19, xlab = "Number of Components",
+     ylab = "Cumulative Variance Explained", main = "PCA Scree Plot")
+
+```
+
+## Ridge Regression
+
+```{r ridge regression model}
+
+train_data$Churn <- as.numeric(train_data$Churn) - 1 
+x <- model.matrix(~ Tenure + MonthlyCharges + TotalCharges, data = train_data)[, -1] 
+
+y <- train_data$Churn 
+
+lambda_seq <- 10^seq(4, -2, length = 100)
+
+
+ridge_model_churn <- glmnet(x, y, alpha = 0, lambda = lambda_seq, family = "binomial")
+
+print(coef(ridge_model_churn, s = 0.1))
+
+```
+Identifying the optimal lambda using cross validation:
+
+```{r optimal lambda}
+
+set.seed(421)
+
+ridge_model_find<- cv.glmnet(x, y, alpha = 0, family = "binomial")
+
+opt_lambda<- ridge_model_find$lambda.min
+
+opt_lambda
+
+```
+```{r model final}
+
+ridge_model_churn_final <- glmnet(x, y, alpha = 0, lambda = opt_lambda, family = "binomial")
+
+print(coef(ridge_model_churn_final, s = opt_lambda))
+
+```
+
+## Lasso Regression
+
+```{r lasso regression}
+
+x <- model.matrix(Churn ~ Tenure + MonthlyCharges + TotalCharges, data = train_data)[, -1] 
+y <- as.numeric(train_data$Churn) - 1
+
+lambda_seq <- 10^seq(4, -2, length = 100)
+lasso_model_churn <- glmnet(x, y, alpha = 1, lambda = lambda_seq, family = "binomial")
+
+print(coef(lasso_model_churn, s = 0.1))
+
+```
+
+```{r training the model}
+set.seed(421)
+
+lasso_model_find<- cv.glmnet(x, y, alpha = 1, family = "binomial")
+
+opt_lambda_lasso<- lasso_model_find$lambda.min
+
+opt_lambda_lasso
+
+```
+
+```{r final lasso coeff}
+print(coef(lasso_model_find, s = opt_lambda))
+```
+
+The Lasso Regression Model finds the best feature for the predictors. From the results, they have shrank into 0. This means that they not all predictors are not necessarily associated with the target variable Churn.
+
