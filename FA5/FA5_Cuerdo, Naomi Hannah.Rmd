@@ -1,0 +1,260 @@
+---
+title: "FA 5"
+author: "Cuerdo, Naomi Hannah A."
+date: "2025-04-30"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(pROC)
+```
+
+# Classification via Logistic Regression
+
+#### Introduction 
+This report aims to predic passenger survival on the Titanic using a logistic regression model. The analysis is based on the Titanic dataset, which contains information about passengers such as age, sex, class, fare, and deck. The objective is to build a classification model that can accurately predicted whether a passenger survived, and to evaluate the model's performance using metrics such as accuracy, precision, recall, F1-score, and AUC. 
+
+#### Data Preprocessing
+
+```{r dataset}
+
+titanic_train <- read.csv("C:/Users/naomi/Downloads/train.csv")
+titanic_test <- read.csv("C:/Users/naomi/Downloads/test.csv")
+gender_titanic <- read.csv("C:/Users/naomi/Downloads/gender_submission.csv")
+
+head(titanic_train)
+
+
+```
+
+```{r view dataset test}
+
+head(titanic_test)
+```
+
+```{r view gender titanic}
+
+head(gender_titanic)
+
+```
+
+```{r pre process 1}
+
+titanic_test <- merge(titanic_test, gender_titanic, by = "PassengerId")
+
+titanic_train <- titanic_train[, colnames(titanic_test)]
+
+titanic_full <- rbind(titanic_train, titanic_test)
+
+```
+
+```{r pre process 2}
+
+colSums(is.na(titanic_full))
+
+```
+
+From the columns, there 263 NAs in Age and 1 NA in Fare. Since there are a lot of null values in Age, we will fill this in with the median of the entire dataset. 
+
+Moreover, since there is only 1 null value in Fare, this can be removed. 
+
+```{r removing null}
+
+titanic_full$Age[is.na(titanic_full$Age)] <- median(titanic_full$Age, na.rm = TRUE)
+
+titanic_full <- titanic_full[!is.na(titanic_full$Fare), ]
+colSums(is.na(titanic_full))
+
+```
+We have now removed all null values in the entire column.
+
+Although it is not seen in the colSums, the Cabin column has a blank cabin for passengers, thus we shall use "U" as unknown for the missing values. We will also remove the number and keep the letter as the letter indicates the deck level. 
+
+```{r cabin}
+
+titanic_full$Cabin[is.na(titanic_full$Cabin)] <- "U"
+titanic_full$Deck <- substr(titanic_full$Cabin, 1, 1)
+
+```
+
+checking the dataset again,
+
+```{r titanic full}
+str(titanic_full)
+```
+Changing the Sex variable to a numerical feature:
+
+```{r sex variable}
+
+titanic_full$Sex <- as.character(titanic_full$Sex)
+
+titanic_full$Sex <- ifelse(titanic_full$Sex == "male", 1, 0)
+
+str(titanic_full)
+
+```
+
+Standardizing the numerical features so that the big numbers do not dominate the model:
+
+```{r standardizing}
+
+titanic_full$Age <- scale(titanic_full$Age)
+titanic_full$Fare <- scale(titanic_full$Fare)
+titanic_full$SibSp <- scale(titanic_full$SibSp)
+titanic_full$Parch <- scale(titanic_full$Parch)
+
+str(titanic_full)
+
+```
+
+Splitting the dataset into training and testing set again:
+
+```{r split }
+set.seed(421)
+
+split <- initial_split(titanic_full, prop = 0.8, strata = "Survived")
+
+titanic_train <- training(split)
+titanic_test <- testing(split)
+```
+
+
+#### Model Implementation
+
+Implementing logisitic regression:
+
+```{r logisitic regression}
+
+log_model_titanic <- glm(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Deck + Embarked, data = titanic_train, family = binomial)
+
+summary(log_model_titanic)
+
+```
+
+With the summary above, we can say that sex is significant, which implies that the sex of the person is important in surviving. Moreover, Age and SibSp are also significant, meaning younger people have a higher chance to survive. Deck E and A are also significant. The other variables are insignificant or less likely to affect their chance of surviving the catastrophe.
+
+Predicting the test set:
+
+```{r predict}
+
+test_pred_prob <- predict(log_model_titanic, newdata = titanic_test, test = "response")
+test_pred_class <- ifelse(test_pred_prob > 0.5, 1, 0)
+
+test_pred_class
+
+```
+
+Counting the passengers who survived:
+
+```{r survivors}
+
+count_survivors <- (sum(test_pred_class)/262) * 100
+
+count_survivors
+
+```
+
+31.3% of the passengers predicted in the test survived while the rest did not.
+
+
+#### Model Evaluation
+
+Using performance metrics such as confusion matrix, roc curve, auc score, accuracy, etc., We can check how the model performed and find ways to have better evaluation. 
+
+```{r eval}
+log_perf <- confusionMatrix(factor(test_pred_class), factor(titanic_test$Survived))
+
+log_perf
+```
+
+```{r metrics}
+accuracy <- log_perf$overall["Accuracy"]
+precision <- log_perf$byClass["Pos Pred Value"]
+recall <- log_perf$byClass["Sensitivity"]
+
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+roc_curve <- roc(titanic_test$Survived, test_pred_prob)
+
+```
+
+```{r metrics 2}
+auc_value <- auc(roc_curve)
+cat("Model Performance Metrics:", auc_value )
+cat("\nPrecision: ", round(precision, 4), "\n")
+cat("Recall: ", round(recall, 4), "\n")
+cat("F1-Score: ", round(f1_score, 4), "\n")
+cat("AUC Score:", round(auc_value, 4), "\n")
+
+```
+With this, we can now plot the ROC curve and the Confusion Matrix Heatmap:
+
+```{r plots}
+plot(roc_curve, col = "blue", main = "ROC Curve")
+abline(a = 0, b = 1, col = "red", lwd = 2)
+
+```
+
+
+```{r confusion matrix heatmap}
+cm_df <- as.data.frame(log_perf$table)
+colnames(cm_df) <- c("Predicted", "Actual", "Freq")
+
+ggplot(data = cm_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  labs(title = "Confusion Matrix Heatmap", x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+```
+
+
+With a performance of 86%, the model classified its passengers with the given percentage, with an 85% of the predicted "survived" passengers.
+
+The Recall also had a high percentage of 93.87%, which means that the model catched the actual survivors, with an F1-score of 89.21%. 
+
+Given that the AUC score is at 86.24% and the ROC Curve going upwards whilst staying on the lower end of specificity and higher sensitivity, the model predicsts the true positive rate more rather than false positive rate. 
+
+Lastly, the confusion matrix shows the true negatives, false negatives, true positives, and false positives. As seen in the heat map, the model predicted 153 true negatives and 72 true positives. the model also predicted 10 false positives and 25 false negatives. 
+
+Overall, the model correctly predicted averaging around 80%-90%, having a good performance all around. 
+
+
+#### Results Interpretation and Discussion:
+
+Summary of the Model Findings:
+
+Model Performance Metrics: 0.862428
+
+Precision:  0.85 
+
+Recall:  0.9387 
+
+F1-Score:  0.8921 
+
+AUC Score: 0.8624 
+
+The logistic regression model achieved solid performance with over 86% accuracy and an AUC of 0.8624, indicating a strong ability to distinguish between survivors and non-survivors. The most influential factors in predicting survival were passenger sex, age, and deck assignment.
+
+For future improvements:
+
+Add interaction terms or polynomial features to capture non-linear relationships.
+
+Explore other classification algorithms like Random Forest or Gradient Boosting.
+
+Use cross-validation for more robust model validation.
+
+Engineer additional features (e.g., family size, title from name).
+
+Overall, the model performed well and provides valuable insights into survival patterns aboard the Titanic.
+
+
+
