@@ -1,0 +1,320 @@
+---
+title: "Summative Assessment 2"
+author: "Cuerdo, Naomi Hannah A., Percia, Kyte Daiter M."
+date: "2025-05-13"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, include=FALSE}
+library(readr)
+library(dplyr)
+library(caret)
+library(ggplot2)
+library(tidyverse)
+library(tidymodels)
+library(fastDummies)
+library(corrplot)
+library(randomForest)
+library(glmnet)
+library(rpart)
+library(xgboost)
+library(pROC)
+library(e1071)
+library(rpart.plot)
+```
+
+#### Dataset Familiarization and Preparation
+```{r loading the data}
+df_train <- read.csv("C:\\Users\\naomi\\Downloads\\churn-bigml-80.csv")
+df_test <- read.csv("C:\\Users\\naomi\\Downloads\\churn-bigml-20.csv")
+```
+
+
+```{r loading the data 2}
+glimpse(df_train)
+```
+
+
+```{r loading the data 3}
+glimpse(df_test)
+```
+
+#### Perform Data Cleaning
+Dropping non-predictive identifiers like phone number and state:
+
+```{r dc 1}
+df_train <- df_train %>%
+  select(-State, - Area.code)
+
+df_test <- df_test %>%
+  select(-State, - Area.code)
+
+```
+
+Converting 'Churn' to numeric (0 = FALSE, 1 = TRUE)
+
+```{r convert churn}
+df_train$Churn <- ifelse(df_train$Churn == "True", 1, 0)
+df_test$Churn <- ifelse(df_test$Churn == "True", 1, 0)
+
+table(df_train$Churn)
+table(df_test$Churn)
+```
+Converting categorical variables to factors:
+
+
+```{r one hot encoding}
+df_train_encoded <- dummy_cols(df_train, select_columns = c("International.plan",
+                                                            "Voice.mail.plan"),
+                               remove_first_dummy = TRUE,           
+                               remove_selected_columns = TRUE)       
+df_test_encoded <- dummy_cols(df_test,
+                              select_columns = c("International.plan",
+                                                 "Voice.mail.plan"),
+                              remove_first_dummy = TRUE,
+                              remove_selected_columns = TRUE)
+```
+
+
+Checking the output:
+
+```{r checking the output}
+colnames(df_train_encoded)
+colnames(df_train_encoded)
+head(df_train_encoded[c("International.plan_Yes", "Voice.mail.plan_Yes")])
+```
+
+Now that the data is cleaned, we can now proceed with the Exploratory Data Analysis and Modeling. 
+
+#### Exploratory Data Analysis
+Summarize Key Features:
+
+```{r key features}
+churn_rate <- df_train %>%
+  count(Churn) %>%
+  mutate(Percentage = n /sum(n) * 100)
+churn_rate
+```
+
+A total of 2278 customers did not churn, which means that they stayed with the company. Meanwhile, 388 customers (or 14.55%) did churn - they left or cancelled the service. 
+
+```{r total day minutes distribution}
+ggplot(df_train, aes(x = Total.day.minutes, fill = as.factor(Churn))) + 
+  geom_histogram(bins = 30, position = "identity", alpha = 0.6) +
+  labs(title = "Distribution of Total Day Minutes by Churn", fill = "Churn") 
+
+```
+
+The histogram shows the distribution of total day minutes used by customers, segmented whether they churned or not.
+
+Most non-churning customers (red) used between 150 to 250 minutes per day. This is where the red bars are tallest. Meanwhile Churning customers (blue) are more spread out and more heavily represented at the higher end of day minutes (e.g., 250–350 minutes). This suggests that customers who churned tended to use more day minutes on average compared to those who stayed.
+
+
+Check Correlation Among Numerical Variables
+
+```{r correlation among numerical variables }
+numeric_data <- select_if(df_train, is.numeric)
+
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8)
+
+```
+Based from the heatmap, it shows that Total.day.minutes and Total.day.charge have a very high positive correlation. Customer.service.calls have a moderative positive relation with Churn, suggesting that day-time users are more likely to leave. 
+Total.night.minutes or Total.intl. calls show weak positive correlation.
+
+Examine Class Imbalance
+
+```{r class imbalance}
+ggplot(df_train, aes(x = as.factor(Churn))) +
+  geom_bar(fill = c("#2c7fb8", "#f03b20")) +
+  labs(title = "Churn Class Distribution", x = "Churn", y = "Count") +
+  theme_minimal()
+
+```
+
+The distribution above confirms the Churn rate, which contains that around 2000 are customers who did not churn, and those who did are only at around 300.
+
+#### Model
+
+Features and target variables:
+```{r target variables}
+x_train <- df_train_encoded %>% select(-Churn)
+y_train <- df_train_encoded$Churn
+
+x_test <- df_test_encoded %>% select(-Churn)
+y_test <- df_test_encoded$Churn
+```
+
+Logistic Regression
+```{r logisitic regression}
+# Train
+log_model <- glm(Churn ~ ., data = df_train_encoded, family = "binomial")
+
+# Predict
+log_probs <- predict(log_model, newdata = df_test_encoded, type = "response")
+log_preds <- ifelse(log_probs > 0.5, 1, 0)
+
+# Evaluation
+confusionMatrix(factor(log_preds), factor(y_test))
+roc_obj_log <- roc(y_test, log_probs)
+auc(roc_obj_log)
+```
+Confusion Matrix Heatmap
+```{r heatmap}
+cm <- confusionMatrix(factor(log_preds), factor(y_test))
+cm_table <- as.table(cm$table)
+
+cm_df <- as.data.frame(cm_table)
+colnames(cm_df) <- c("Predicted", "Actual", "Freq")
+
+cm_df$Label <- c("TN", "FP", "FN", "TP")  # Order is correct if factors are 0 and 1
+
+ggplot(cm_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = paste0(Label, "\n", Freq)), size = 5) +
+  scale_fill_gradient(low = "lightyellow", high = "red") +
+  labs(title = "Confusion Matrix Heatmap", x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+```
+
+
+Plotting the Logistic Regression Model using the ROC Curve
+
+```{r plot the logistic regression}
+roc_log <- roc(y_test, log_probs)
+plot(roc_log, main = "ROC Curve - Logistic Regression", col = "blue")
+
+```
+
+Ridge and Lasso Regression
+
+```{r ridge and lasso}
+
+x_train_mat <- model.matrix(Churn ~ ., data = df_train_encoded)[, -1]
+y_train_vec <- df_train_encoded$Churn
+x_test_mat <- model.matrix(Churn ~ ., data = df_test_encoded)[, -1]
+
+# Ridge Regression (alpha = 0)
+ridge_model <- cv.glmnet(x_train_mat, y_train_vec, alpha = 0, family = "binomial")
+ridge_probs <- predict(ridge_model, s = ridge_model$lambda.min, newx = x_test_mat, type = "response")
+ridge_preds <- ifelse(ridge_probs > 0.5, 1, 0)
+
+confusionMatrix(factor(ridge_preds), factor(y_test))
+roc_obj_ridge <- roc(y_test, as.vector(ridge_probs))
+auc(roc_obj_ridge)
+
+# Lasso Regression (alpha = 1)
+lasso_model <- cv.glmnet(x_train_mat, y_train_vec, alpha = 1, family = "binomial")
+lasso_probs <- predict(lasso_model, s = lasso_model$lambda.min, newx = x_test_mat, type = "response")
+lasso_preds <- ifelse(lasso_probs > 0.5, 1, 0)
+
+confusionMatrix(factor(lasso_preds), factor(y_test))
+roc_obj_lasso <- roc(y_test, as.vector(lasso_probs))
+auc(roc_obj_lasso)
+```
+```{r plotting the ridge and lasso model}
+par(mar = c(5, 4, 5, 2))  # bottom, left, top, right margins
+plot(ridge_model, main = "Ridge: Cross-Validation Curve")
+plot(lasso_model, main = "Lasso: Cross-Validation Curve")
+
+```
+
+Decision tree
+
+```{r decision tree}
+tree_model <- rpart(Churn ~ ., data = df_train_encoded, method = "class")
+tree_preds <- predict(tree_model, newdata = df_test_encoded, type = "class")
+
+confusionMatrix(tree_preds, factor(y_test))
+```
+```{r plotting the decision tree}
+rpart.plot(tree_model, 
+           type = 2, 
+           extra = 106, 
+           fallen.leaves = TRUE, 
+           main = "Decision Tree for Churn Prediction")
+
+```
+
+
+```{r random forest}
+rf_model <- randomForest(x = x_train, y = as.factor(y_train), ntree = 100)
+rf_preds <- predict(rf_model, newdata = x_test)
+
+confusionMatrix(rf_preds, factor(y_test))
+varImpPlot(rf_model)
+
+
+```
+
+Gradient Boosting
+```{r gradient boost}
+# Convert to matrix for xgboost
+xgb_train <- xgb.DMatrix(data = as.matrix(x_train), label = y_train)
+xgb_test <- xgb.DMatrix(data = as.matrix(x_test), label = y_test)
+
+# Train the model
+xgb_model <- xgboost(data = xgb_train, nrounds = 100, objective = "binary:logistic", verbose = 0)
+
+# Predict
+xgb_probs <- predict(xgb_model, xgb_test)
+xgb_preds <- ifelse(xgb_probs > 0.5, 1, 0)
+
+confusionMatrix(factor(xgb_preds), factor(y_test))
+roc_obj_xgb <- roc(y_test, xgb_probs)
+auc(roc_obj_xgb)
+
+
+```
+
+Feature Importance of Gradient Boosting
+
+```{r xg boost model}
+
+xgb_importance <- xgb.importance(model = xgb_model)
+xgb.plot.importance(xgb_importance, top_n = 10, main = "XGBoost - Feature Importance")
+
+
+```
+Combining all AUC Scores:
+```{r AUC Scores}
+auc_scores <- data.frame(
+  Model = c("Logistic", "Ridge", "Lasso", "XGBoost"),
+  AUC = c(
+    auc(roc_obj_log),
+    auc(roc_obj_ridge),
+    auc(roc_obj_lasso),
+    auc(roc_obj_xgb)
+  )
+)
+
+print(auc_scores)
+
+
+```
+
+#### Conclusion and Interpretation
+Compiling all AUCs and accuracies:
+```{r conclusion 1}
+
+log_auc <- auc(roc(y_test, log_probs))
+ridge_auc <- auc(roc(y_test, as.vector(ridge_probs)))
+lasso_auc <- auc(roc(y_test, as.vector(lasso_probs)))
+xgb_auc <- auc(roc(y_test, xgb_probs))
+
+model_performance <- data.frame(
+  Model = c("Logistic Regression", "Ridge Regression", "Lasso Regression", "Random Forest", "XGBoost"),
+  AUC = c(log_auc, ridge_auc, lasso_auc, NA, xgb_auc)  
+)
+
+model_performance
+
+
+```
